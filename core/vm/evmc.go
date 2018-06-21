@@ -116,12 +116,12 @@ type EVMC struct {
 	returnData []byte // Last CALL's return data for subsequent reuse
 }
 
-type EVMCContext struct {
+type evmcContext struct {
 	contract *Contract
 	env      *EVM
 }
 
-type ContextWrapper struct {
+type contextWrapper struct {
 	c C.struct_evmc_context
 	index int
 }
@@ -170,10 +170,10 @@ func NewEVMC(env *EVM, cfg Config) *EVMC {
 }
 
 
-var contextMap = make(map[int]*EVMCContext)
+var contextMap = make(map[int]*evmcContext)
 var contextMapMu sync.Mutex
 
-func pinCtx(ctx *EVMCContext) int {
+func pinCtx(ctx *evmcContext) int {
 	contextMapMu.Lock()
 
 	// Find empty slot in the map starting from the map length.
@@ -192,32 +192,32 @@ func unpinCtx(id int) {
 	contextMapMu.Unlock()
 }
 
-func getCtx(idx int) *EVMCContext {
+func getCtx(idx int) *evmcContext {
 	contextMapMu.Lock()
 	defer contextMapMu.Unlock()
 	return contextMap[idx]
 }
 
 func getEnv(pCtx unsafe.Pointer) *EVM {
-	ctxWrapper := (*ContextWrapper)(pCtx)
+	ctxWrapper := (*contextWrapper)(pCtx)
 	return getCtx(ctxWrapper.index).env
 }
 
 func getContract(pCtx unsafe.Pointer) *Contract {
-	ctxWrapper := (*ContextWrapper)(pCtx)
+	ctxWrapper := (*contextWrapper)(pCtx)
 	return getCtx(ctxWrapper.index).contract
 }
 
-func HashToEvmc(hash common.Hash) C.struct_evmc_uint256be {
+func hashToEvmc(hash common.Hash) C.struct_evmc_uint256be {
 	return C.struct_evmc_uint256be{*(*[32]C.uint8_t)(unsafe.Pointer(&hash[0]))}
 }
 
-func AddressToEvmc(addr common.Address) C.struct_evmc_address {
+func addressToEvmc(addr common.Address) C.struct_evmc_address {
 	return C.struct_evmc_address{*(*[20]C.uint8_t)(unsafe.Pointer(&addr[0]))}
 }
 
-func BigToEvmc(i *big.Int) C.struct_evmc_uint256be {
-	return HashToEvmc(common.BigToHash(i))
+func bigToEvmc(i *big.Int) C.struct_evmc_uint256be {
+	return hashToEvmc(common.BigToHash(i))
 }
 
 func assert(cond bool, msg string) {
@@ -226,7 +226,7 @@ func assert(cond bool, msg string) {
 	}
 }
 
-func GoByteSlice(data unsafe.Pointer, size C.size_t) []byte {
+func goByteSlice(data unsafe.Pointer, size C.size_t) []byte {
 	var sliceHeader reflect.SliceHeader
 	sliceHeader.Data = uintptr(data)
 	sliceHeader.Len = int(size)
@@ -234,8 +234,8 @@ func GoByteSlice(data unsafe.Pointer, size C.size_t) []byte {
 	return *(*[]byte)(unsafe.Pointer(&sliceHeader))
 }
 
-func EvmcHashToSlice(uint256 *C.struct_evmc_uint256be) []byte {
-	return GoByteSlice(unsafe.Pointer(uint256), 32)
+func evmcHashToSlice(uint256 *C.struct_evmc_uint256be) []byte {
+	return goByteSlice(unsafe.Pointer(uint256), 32)
 }
 
 //export account_exists
@@ -243,7 +243,7 @@ func account_exists(pCtx unsafe.Pointer, pAddr unsafe.Pointer) C.int {
 	// Get the execution context.
 	env := getEnv(pCtx)
 
-	arg := GoByteSlice(pAddr, 20)
+	arg := goByteSlice(pAddr, 20)
 	var addr common.Address
 	copy(addr[:], arg[:])
 	eip158 := env.ChainConfig().IsEIP158(env.BlockNumber)
@@ -261,11 +261,11 @@ func account_exists(pCtx unsafe.Pointer, pAddr unsafe.Pointer) C.int {
 
 //export get_storage
 func get_storage(pResult *C.struct_evmc_uint256be, pCtx unsafe.Pointer, pAddr unsafe.Pointer, pArg *C.struct_evmc_uint256be) {
-	result := EvmcHashToSlice(pResult)
+	result := evmcHashToSlice(pResult)
 	env := getEnv(pCtx)
 
 	var addr common.Address
-	copy(addr[:], GoByteSlice(pAddr, 20))
+	copy(addr[:], goByteSlice(pAddr, 20))
 
 	arg := *(*[32]byte)(unsafe.Pointer(pArg))
 	val := env.StateDB.GetState(addr, arg)
@@ -278,7 +278,7 @@ func set_storage(pCtx unsafe.Pointer, pAddr unsafe.Pointer, pArg1 unsafe.Pointer
 	env := getEnv(pCtx)
 
 	var addr common.Address
-	copy(addr[:], GoByteSlice(pAddr, 20))
+	copy(addr[:], goByteSlice(pAddr, 20))
 
 	key := *(*[32]byte)(pArg1)
 	newVal := *(*[32]byte)(pArg2)
@@ -292,11 +292,11 @@ func set_storage(pCtx unsafe.Pointer, pAddr unsafe.Pointer, pArg1 unsafe.Pointer
 
 //export get_balance
 func get_balance(pResult unsafe.Pointer, pCtx unsafe.Pointer, pAddr unsafe.Pointer) {
-	result := GoByteSlice(pResult, 32)
+	result := goByteSlice(pResult, 32)
 	env := getEnv(pCtx)
 
 	var addr common.Address
-	copy(addr[:], GoByteSlice(pAddr, 20))
+	copy(addr[:], goByteSlice(pAddr, 20))
 	balance := env.StateDB.GetBalance(addr)
 	val := common.BigToHash(balance)
 	copy(result, val[:])
@@ -308,7 +308,7 @@ func get_code_size(pCtx unsafe.Pointer, pAddr unsafe.Pointer) C.size_t {
 	env := getEnv(pCtx)
 
 	var addr common.Address
-	copy(addr[:], GoByteSlice(pAddr, 20))
+	copy(addr[:], goByteSlice(pAddr, 20))
 	return C.size_t(env.StateDB.GetCodeSize(addr));
 }
 
@@ -317,7 +317,7 @@ func copy_code(pCtx unsafe.Pointer, pAddr unsafe.Pointer, offset C.size_t, p *C.
 	env := getEnv(pCtx)
 
 	var addr common.Address
-	copy(addr[:], GoByteSlice(pAddr, 20))
+	copy(addr[:], goByteSlice(pAddr, 20))
 	code := env.StateDB.GetCode(addr)
 	length := C.size_t(len(code))
 
@@ -330,7 +330,7 @@ func copy_code(pCtx unsafe.Pointer, pAddr unsafe.Pointer, offset C.size_t, p *C.
 		toCopy = size
 	}
 
-	out := GoByteSlice(unsafe.Pointer(p), size)
+	out := goByteSlice(unsafe.Pointer(p), size)
 
 	copy(out, code[offset:])
 	return toCopy
@@ -341,10 +341,10 @@ func selfdestruct(pCtx unsafe.Pointer, pAddr unsafe.Pointer, pArg unsafe.Pointer
 	env := getEnv(pCtx)
 
 	var addr common.Address
-	copy(addr[:], GoByteSlice(pAddr, 20))
+	copy(addr[:], goByteSlice(pAddr, 20))
 
 	var beneficiary common.Address
-	copy(beneficiary[:], GoByteSlice(pArg, 20))
+	copy(beneficiary[:], goByteSlice(pArg, 20))
 
 	db := env.StateDB
 	if !db.HasSuicided(addr) {
@@ -359,19 +359,19 @@ func selfdestruct(pCtx unsafe.Pointer, pAddr unsafe.Pointer, pArg unsafe.Pointer
 func getTxCtx(pResult unsafe.Pointer, pCtx unsafe.Pointer) {
 	env := getEnv(pCtx)
 	txCtx := (*C.struct_evmc_tx_context)(pResult)
-	txCtx.tx_gas_price = BigToEvmc(env.GasPrice)
-	txCtx.tx_origin = AddressToEvmc(env.Origin)
-	txCtx.block_coinbase = AddressToEvmc(env.Coinbase)
+	txCtx.tx_gas_price = bigToEvmc(env.GasPrice)
+	txCtx.tx_origin = addressToEvmc(env.Origin)
+	txCtx.block_coinbase = addressToEvmc(env.Coinbase)
 	txCtx.block_number = C.int64_t(env.BlockNumber.Int64())
 	txCtx.block_timestamp = C.int64_t(env.Time.Int64())
 	txCtx.block_gas_limit = C.int64_t(env.GasLimit)
-	txCtx.block_difficulty = BigToEvmc(env.Difficulty)
+	txCtx.block_difficulty = bigToEvmc(env.Difficulty)
 }
 
 //export getBlockHash
 func getBlockHash(pResult unsafe.Pointer, pCtx unsafe.Pointer, number int64) {
 	// Represent the result memory as Go slice of 32 bytes.
-	result := GoByteSlice(pResult, 32)
+	result := goByteSlice(pResult, 32)
 	env := getEnv(pCtx)
 	b := env.BlockNumber.Int64()
 	a := b - 256
@@ -387,7 +387,7 @@ func emit_log(pCtx unsafe.Pointer, pAddr unsafe.Pointer, pData unsafe.Pointer, d
 	env := getEnv(pCtx)
 
 	var addr common.Address
-	copy(addr[:], GoByteSlice(pAddr, 20))
+	copy(addr[:], goByteSlice(pAddr, 20))
 
 	data := C.GoBytes(pData, C.int(dataSize))
 	tData := C.GoBytes(pTopics, C.int(topicsCount * 32))
@@ -412,7 +412,7 @@ func call(result *C.struct_evmc_result, pCtx unsafe.Pointer, msg *C.struct_evmc_
 
 	addr := *(*common.Address)(unsafe.Pointer(&msg.destination))
 	value := (*(*common.Hash)(unsafe.Pointer(&msg.value))).Big()
-	input := GoByteSlice(unsafe.Pointer(msg.input_data), msg.input_size)
+	input := goByteSlice(unsafe.Pointer(msg.input_data), msg.input_size)
 	gas := uint64(msg.gas)
 
 	var output []byte
@@ -450,7 +450,7 @@ func call(result *C.struct_evmc_result, pCtx unsafe.Pointer, msg *C.struct_evmc_
 		}
 		if err == nil {
 			// Copy create address to result.
-			ca := GoByteSlice(unsafe.Pointer(&result.create_address.bytes), 20)
+			ca := goByteSlice(unsafe.Pointer(&result.create_address.bytes), 20)
 			copy(ca, createAddr[:])
 		} else if err == errExecutionReverted {
 			// Assign return buffer from REVERT.
@@ -488,11 +488,6 @@ func call(result *C.struct_evmc_result, pCtx unsafe.Pointer, msg *C.struct_evmc_
 	}
 }
 
-func ptr(bytes []byte) *C.uint8_t {
-	header := *(*reflect.SliceHeader)(unsafe.Pointer(&bytes))
-	return (*C.uint8_t)(unsafe.Pointer(header.Data))
-}
-
 func getRevision(env *EVM) C.enum_evmc_revision {
 	n := env.BlockNumber
 	if env.ChainConfig().IsByzantium(n) {
@@ -526,18 +521,18 @@ func (evm *EVMC) Run(contract *Contract, input []byte) (ret []byte, err error) {
 	rev := getRevision(evm.env)
 
 	// Create context for this execution.
-	wrapper := ContextWrapper{}
+	wrapper := contextWrapper{}
 	wrapper.c.fn_table = C.get_context_fn_table()
-	wrapper.index = pinCtx(&EVMCContext{contract, evm.env})
+	wrapper.index = pinCtx(&evmcContext{contract, evm.env})
 
 	var msg C.struct_evmc_message
-	msg.destination = AddressToEvmc(contract.Address())
-	msg.sender = AddressToEvmc(contract.Caller())
-	msg.value = BigToEvmc(contract.value)
+	msg.destination = addressToEvmc(contract.Address())
+	msg.sender = addressToEvmc(contract.Caller())
+	msg.value = bigToEvmc(contract.value)
 	msg.gas = gas
 	msg.depth = C.int32_t(evm.env.depth - 1)
 	codeHash := crypto.Keccak256Hash(code)
-	msg.code_hash = HashToEvmc(codeHash)
+	msg.code_hash = hashToEvmc(codeHash)
 	if evm.readOnly {
 		msg.flags = C.EVMC_STATIC
 	} else {
