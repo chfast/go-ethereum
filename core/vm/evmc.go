@@ -213,11 +213,19 @@ func getContract(pCtx unsafe.Pointer) *Contract {
 }
 
 func hashToEvmc(hash common.Hash) C.struct_evmc_uint256be {
-	return C.struct_evmc_uint256be{*(*[32]C.uint8_t)(unsafe.Pointer(&hash[0]))}
+	var uint256 C.struct_evmc_uint256be
+	for i := 0; i < 32; i++ {
+		uint256.bytes[i] = C.uint8_t(hash[i])
+	}
+	return uint256
 }
 
 func addressToEvmc(addr common.Address) C.struct_evmc_address {
-	return C.struct_evmc_address{*(*[20]C.uint8_t)(unsafe.Pointer(&addr[0]))}
+	var address C.struct_evmc_address
+	for i := 0; i < 20; i++ {
+		address.bytes[i] = C.uint8_t(addr[i])
+	}
+	return address
 }
 
 func bigToEvmc(i *big.Int) C.struct_evmc_uint256be {
