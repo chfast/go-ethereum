@@ -129,14 +129,21 @@ type contextWrapper struct {
 var loadMu sync.Mutex
 var createSymbol unsafe.Pointer
 var loaded = false
+var evmcPath string
 
 func loadVM(path string) {
-	if len(path) == 0 {
-		panic("EVMC path not provided, use --vm flag")
-	}
-
 	loadMu.Lock()
 	defer loadMu.Unlock()
+
+	if len(path) == 0 {
+		if len(evmcPath) == 0 {
+			panic("EVMC path not provided, use --vm flag")
+		} else {
+			path = evmcPath
+		}
+	} else {
+		evmcPath = path  // Remember the path, because sometimes VMConfig will not have it. Hack!
+	}
 
 	if loaded {
 		return
