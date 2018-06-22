@@ -101,17 +101,18 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+	"os"
 )
 
 type EVMC struct {
-	jit  *C.struct_evmc_instance
-	env  *EVM
-	intPool  *intPool
+	jit        *C.struct_evmc_instance
+	env        *EVM
+	intPool    *intPool
 	readOnly   bool
 	returnData []byte // Last CALL's return data for subsequent reuse
 }
@@ -122,7 +123,7 @@ type evmcContext struct {
 }
 
 type contextWrapper struct {
-	c C.struct_evmc_context
+	c     C.struct_evmc_context
 	index int
 }
 
@@ -137,12 +138,15 @@ func loadVM(path string) {
 
 	if len(path) == 0 {
 		if len(evmcPath) == 0 {
-			panic("EVMC path not provided, use --vm flag")
+			path = os.Getenv("EVMC_PATH")
+			if len(path) == 0 {
+				panic("EVMC path not provided, use --vm flag or set EVMC_PATH")
+			}
 		} else {
 			path = evmcPath
 		}
 	} else {
-		evmcPath = path  // Remember the path, because sometimes VMConfig will not have it. Hack!
+		evmcPath = path // Remember the path, because sometimes VMConfig will not have it. Hack!
 	}
 
 	if loaded {
@@ -175,7 +179,6 @@ func NewEVMC(env *EVM, cfg Config) *EVMC {
 	// FIXME: Create the instance once.
 	return &EVMC{C.create(createSymbol), env, nil, false, nil}
 }
-
 
 var contextMap = make(map[int]*evmcContext)
 var contextMapMu sync.Mutex
@@ -316,7 +319,7 @@ func get_code_size(pCtx unsafe.Pointer, pAddr unsafe.Pointer) C.size_t {
 
 	var addr common.Address
 	copy(addr[:], goByteSlice(pAddr, 20))
-	return C.size_t(env.StateDB.GetCodeSize(addr));
+	return C.size_t(env.StateDB.GetCodeSize(addr))
 }
 
 //export copy_code
@@ -332,7 +335,7 @@ func copy_code(pCtx unsafe.Pointer, pAddr unsafe.Pointer, offset C.size_t, p *C.
 		return 0
 	}
 
-	toCopy := length - offset;
+	toCopy := length - offset
 	if toCopy > size {
 		toCopy = size
 	}
@@ -397,7 +400,7 @@ func emit_log(pCtx unsafe.Pointer, pAddr unsafe.Pointer, pData unsafe.Pointer, d
 	copy(addr[:], goByteSlice(pAddr, 20))
 
 	data := C.GoBytes(pData, C.int(dataSize))
-	tData := C.GoBytes(pTopics, C.int(topicsCount * 32))
+	tData := C.GoBytes(pTopics, C.int(topicsCount*32))
 
 	nTopics := int(topicsCount)
 	topics := make([]common.Hash, nTopics)
@@ -405,9 +408,9 @@ func emit_log(pCtx unsafe.Pointer, pAddr unsafe.Pointer, pData unsafe.Pointer, d
 		copy(topics[i][:], tData[i*32:(i+1)*32])
 	}
 	env.StateDB.AddLog(&types.Log{
-		Address: addr,
-		Topics:  topics,
-		Data:    data,
+		Address:     addr,
+		Topics:      topics,
+		Data:        data,
 		BlockNumber: env.BlockNumber.Uint64(),
 	})
 }
@@ -436,7 +439,6 @@ func call(result *C.struct_evmc_result, pCtx unsafe.Pointer, msg *C.struct_evmc_
 			// fmt.Printf("CALL(gas %d, %x)\n", gas, addr)
 			output, gasLeft, err = env.Call(contract, addr, input, gas, value)
 		}
-
 
 	case C.EVMC_CALLCODE:
 		// fmt.Printf("CALLCODE(gas %d, %x, value %d)\n", gas, addr, value)
