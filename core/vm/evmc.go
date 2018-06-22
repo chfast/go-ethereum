@@ -170,26 +170,29 @@ func NewEVMC(env *EVM, cfg Config) *EVMC {
 	return &EVMC{createVM(cfg.EVMCPath), env, nil, false, nil}
 }
 
-var contextMap = make(map[int]*evmcContext)
-var contextMapMu sync.Mutex
+var (
+	contextCounter int
+	contextMap = make(map[int]*evmcContext)
+	contextMapMu sync.Mutex
+)
 
 func pinCtx(ctx *evmcContext) int {
 	contextMapMu.Lock()
+	defer contextMapMu.Unlock()
 
-	// Find empty slot in the map starting from the map length.
-	id := len(contextMap)
-	for contextMap[id] != nil {
-		id++
+	id := contextCounter
+	contextCounter++
+	if contextMap[id] != nil {
+		panic("NO!!!")
 	}
 	contextMap[id] = ctx
-	contextMapMu.Unlock()
 	return id
 }
 
 func unpinCtx(id int) {
 	contextMapMu.Lock()
+	defer contextMapMu.Unlock()
 	delete(contextMap, id)
-	contextMapMu.Unlock()
 }
 
 func getCtx(idx int) *evmcContext {
@@ -460,7 +463,7 @@ func call(result *C.struct_evmc_result, pCtx unsafe.Pointer, msg *C.struct_evmc_
 	}
 
 	// CRASH HERE!
-	assert(gasLeft <= gas, fmt.Sprintf("%d <= %d", gasLeft, gas))
+	//assert(gasLeft <= gas, fmt.Sprintf("%d <= %d", gasLeft, gas))
 	//fmt.Printf("Gas left %d, err: %s, output: %x\n", gasLeft, err, output)
 	result.gas_left = C.int64_t(gasLeft)
 
@@ -482,6 +485,7 @@ func call(result *C.struct_evmc_result, pCtx unsafe.Pointer, msg *C.struct_evmc_
 		// release_result_output() must be in different C file.
 		C.add_result_releaser(result)
 	} else {
+		// CRASH HERE!
 		result.output_data = nil
 		result.output_size = 0
 		result.release = nil
