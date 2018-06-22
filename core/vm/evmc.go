@@ -127,57 +127,48 @@ type contextWrapper struct {
 	index int
 }
 
-var loadMu sync.Mutex
-var createSymbol unsafe.Pointer
-var loaded = false
-var evmcPath string
+var (
+	createMu     sync.Mutex
+	evmcInstance *C.struct_evmc_instance
+)
 
-func loadVM(path string) {
-	loadMu.Lock()
-	defer loadMu.Unlock()
+func createVM(path string) *C.struct_evmc_instance {
+	createMu.Lock()
+	defer createMu.Unlock()
 
-	if len(path) == 0 {
-		if len(evmcPath) == 0 {
+	if evmcInstance == nil {
+		if len(path) == 0 {
 			path = os.Getenv("EVMC_PATH")
 			if len(path) == 0 {
 				panic("EVMC path not provided, use --vm flag or set EVMC_PATH")
 			}
-		} else {
-			path = evmcPath
 		}
-	} else {
-		evmcPath = path // Remember the path, because sometimes VMConfig will not have it. Hack!
-	}
 
-	if loaded {
-		return
-	}
+		cpath := C.CString(path)
+		defer C.free(unsafe.Pointer(cpath))
+		handle := C.dlopen(cpath, C.RTLD_LAZY)
+		if handle == nil {
+			panic(fmt.Sprintf("cannot open %s", path))
+		}
 
-	cpath := C.CString(path)
-	defer C.free(unsafe.Pointer(cpath))
-	handle := C.dlopen(cpath, C.RTLD_LAZY)
-	if handle == nil {
-		panic(fmt.Sprintf("cannot open %s", path))
-	}
+		centrypoint := C.CString("evmc_create")
+		defer C.free(unsafe.Pointer((centrypoint)))
 
-	centrypoint := C.CString("evmc_create")
-	defer C.free(unsafe.Pointer((centrypoint)))
-
-	C.dlerror()
-	createSymbol = C.dlsym(handle, centrypoint)
-	err := C.dlerror()
-	if err != nil {
-		panic(fmt.Sprintf("cannot find evmc_create in %s", path))
+		C.dlerror()
+		createSymbol := C.dlsym(handle, centrypoint)
+		err := C.dlerror()
+		if err != nil {
+			panic(fmt.Sprintf("cannot find evmc_create in %s", path))
+		}
+		// TODO: This instance will never be destroyed.
+		evmcInstance = C.create(createSymbol)
+		log.Info("EVMC VM loaded", "path", path)
 	}
-	loaded = true
-	log.Info("EVMC VM loaded", "path", path)
+	return evmcInstance
 }
 
 func NewEVMC(env *EVM, cfg Config) *EVMC {
-	loadVM(cfg.EVMCPath)
-	// FIXME: Destroy the instance later.
-	// FIXME: Create the instance once.
-	return &EVMC{C.create(createSymbol), env, nil, false, nil}
+	return &EVMC{createVM(cfg.EVMCPath), env, nil, false, nil}
 }
 
 var contextMap = make(map[int]*evmcContext)
