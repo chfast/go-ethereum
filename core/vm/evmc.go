@@ -526,9 +526,8 @@ func (evm *EVMC) Run(contract *Contract, input []byte) (ret []byte, err error) {
 		return nil, nil
 	}
 
-	code := contract.Code
-	codePtr := (*C.uint8_t)(unsafe.Pointer(&code[0]))
-	codeSize := C.size_t(len(code))
+	codePtr := (*C.uint8_t)(C.CBytes(contract.Code))
+	codeSize := C.size_t(len(contract.Code))
 	gas := C.int64_t(contract.Gas)
 	rev := getRevision(evm.env)
 
@@ -543,7 +542,7 @@ func (evm *EVMC) Run(contract *Contract, input []byte) (ret []byte, err error) {
 	msg.value = bigToEvmc(contract.value)
 	msg.gas = gas
 	msg.depth = C.int32_t(evm.env.depth - 1)
-	codeHash := crypto.Keccak256Hash(code)
+	codeHash := crypto.Keccak256Hash(contract.Code)
 	msg.code_hash = hashToEvmc(codeHash)
 	if evm.readOnly {
 		msg.flags = C.EVMC_STATIC
@@ -564,6 +563,7 @@ func (evm *EVMC) Run(contract *Contract, input []byte) (ret []byte, err error) {
 	// fmt.Printf("EVMC pre Run (gas %d %d mode: %d, env: %d) %x %x\n", contract.Gas, gas, rev, wrapper.index, codeHash, contract.Address())
 
 	r := C.evmc_execute(evm.jit, &wrapper.c, rev, &msg, codePtr, codeSize)
+	C.free(unsafe.Pointer(codePtr))
 
 	unpinCtx(wrapper.index)
 
