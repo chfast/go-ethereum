@@ -97,7 +97,7 @@ import "C"
 import (
 	"fmt"
 	"math/big"
-	"reflect"
+	"os"
 	"sync"
 	"unsafe"
 
@@ -106,7 +106,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"os"
 )
 
 type EVMC struct {
@@ -196,6 +195,7 @@ func unpinCtx(id int) {
 func getCtx(idx int) *evmcContext {
 	contextMapMu.Lock()
 	defer contextMapMu.Unlock()
+	// CRASH HERE! for idx == 845.
 	return contextMap[idx]
 }
 
@@ -228,11 +228,10 @@ func assert(cond bool, msg string) {
 }
 
 func goByteSlice(data unsafe.Pointer, size C.size_t) []byte {
-	var sliceHeader reflect.SliceHeader
-	sliceHeader.Data = uintptr(data)
-	sliceHeader.Len = int(size)
-	sliceHeader.Cap = int(size)
-	return *(*[]byte)(unsafe.Pointer(&sliceHeader))
+	if size == 0 {
+		return []byte{}
+	}
+	return (*[1 << 30]byte)(data)[:size:size]
 }
 
 func evmcHashToSlice(uint256 *C.struct_evmc_uint256be) []byte {
@@ -460,6 +459,7 @@ func call(result *C.struct_evmc_result, pCtx unsafe.Pointer, msg *C.struct_evmc_
 		}
 	}
 
+	// CRASH HERE!
 	assert(gasLeft <= gas, fmt.Sprintf("%d <= %d", gasLeft, gas))
 	//fmt.Printf("Gas left %d, err: %s, output: %x\n", gasLeft, err, output)
 	result.gas_left = C.int64_t(gasLeft)
@@ -574,5 +574,6 @@ func (evm *EVMC) Run(contract *Contract, input []byte) (ret []byte, err error) {
 		C.evmc_release_result(&r)
 	}
 
+	// CRASH HERE!
 	return output, err
 }
