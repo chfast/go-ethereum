@@ -89,7 +89,7 @@ static struct evmc_instance* create(void* create_symbol)
 	return fn();
 }
 
-#cgo CFLAGS:  -I/home/chfast/Projects/ethereum/cpp-ethereum/evmc/include
+#cgo CFLAGS:  -I../../evmc/include
 #cgo LDFLAGS: -ldl
 */
 import "C"
