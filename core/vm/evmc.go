@@ -106,6 +106,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"path"
+	"strings"
 )
 
 type EVMC struct {
@@ -131,37 +133,69 @@ var (
 	evmcInstance *C.struct_evmc_instance
 )
 
-func createVM(path string) *C.struct_evmc_instance {
+func createVM(vmPath string) *C.struct_evmc_instance {
 	createMu.Lock()
 	defer createMu.Unlock()
 
 	if evmcInstance == nil {
-		if len(path) == 0 {
-			path = os.Getenv("EVMC_PATH")
-			if len(path) == 0 {
-				panic("EVMC path not provided, use --vm flag or set EVMC_PATH")
+		if len(vmPath) == 0 {
+			vmPath = os.Getenv("EVMC_PATH")
+			if len(vmPath) == 0 {
+				panic("EVMC vmPath not provided, use --vm flag or set EVMC_PATH")
 			}
 		}
 
-		cpath := C.CString(path)
+		cpath := C.CString(vmPath)
 		defer C.free(unsafe.Pointer(cpath))
 		handle := C.dlopen(cpath, C.RTLD_LAZY)
 		if handle == nil {
-			panic(fmt.Sprintf("cannot open %s", path))
+			panic(fmt.Sprintf("cannot open %s", vmPath))
 		}
 
-		centrypoint := C.CString("evmc_create")
-		defer C.free(unsafe.Pointer((centrypoint)))
+		names := make([]string, 0, 2)
 
-		C.dlerror()
-		createSymbol := C.dlsym(handle, centrypoint)
-		err := C.dlerror()
-		if err != nil {
-			panic(fmt.Sprintf("cannot find evmc_create in %s", path))
+		base := path.Base(vmPath)
+		extension := path.Ext(base)
+		name := base[0 : len(base)-len(extension)]
+
+		libNamePrefix := "lib"
+		if strings.Index(name, libNamePrefix) == 0 {
+			name = name[len(libNamePrefix):]
 		}
+
+		log.Warn("Name: ", "name", name)
+
+		names = append(names, strings.Replace(name, "-", "_", -1))
+
+		if idx := strings.LastIndex(name, "-"); idx != -1 {
+			names = append(names, name[idx+1:])
+		}
+
+		var createFn unsafe.Pointer
+		for _, n := range names {
+			symbolName := "evmc_create_" + n
+			cSymbolName := C.CString(symbolName)
+			defer C.free(unsafe.Pointer(cSymbolName))
+
+			C.dlerror()
+			createFn = C.dlsym(handle, cSymbolName)
+			success := C.dlerror() == nil
+			log.Info("EVMC seeking create function", "symbol", symbolName, "success", success)
+			if success {
+				break
+			}
+		}
+
 		// TODO: This instance will never be destroyed.
-		evmcInstance = C.create(createSymbol)
-		log.Info("EVMC VM loaded", "path", path)
+		evmcInstance = C.create(createFn)
+
+		if evmcInstance.abi_version != C.EVMC_ABI_VERSION {
+			panic(fmt.Sprintf("EVMC ABI version mismatch! client: %d, vm: %d", C.EVMC_ABI_VERSION, evmcInstance.abi_version))
+		}
+
+		vmName := C.GoString(evmcInstance.name)
+		vmVersion := C.GoString(evmcInstance.version)
+		log.Info("EVMC VM loaded", "name", vmName, "version", vmVersion, "path", vmPath)
 	}
 	return evmcInstance
 }
@@ -172,8 +206,8 @@ func NewEVMC(env *EVM, cfg Config) *EVMC {
 
 var (
 	contextCounter int
-	contextMap = make(map[int]*evmcContext)
-	contextMapMu sync.Mutex
+	contextMap     = make(map[int]*evmcContext)
+	contextMapMu   sync.Mutex
 )
 
 func pinCtx(ctx *evmcContext) int {
