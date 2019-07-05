@@ -14,6 +14,7 @@ package main
 //     size_t code_size
 // );
 import "C"
+import "github.com/ethereum/go-ethereum/core/vm"
 
 //export geth_evm_execute
 func geth_evm_execute(instance *C.struct_evmc_instance,
@@ -22,6 +23,12 @@ func geth_evm_execute(instance *C.struct_evmc_instance,
 	msg *C.struct_evmc_message,
 	code *C.uint8_t,
 	codeSize C.size_t) C.struct_evmc_result {
+
+	// FIXME: There is not way to provide the EVM object required by the Interpreter.
+	//        If EVM was an interface maybe we had a chance of implementing it
+	//        with EVMC Host Interface provided in the context object.
+	interpreter := vm.NewEVMInterpreter()
+
 	return C.struct_evmc_result{}
 }
 
